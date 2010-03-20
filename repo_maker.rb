@@ -6,55 +6,100 @@ require 'yajl'
 require 'grit'
 
 
-REPO_PATH = "/home/git/repositories/%s.git"
+class GitHandler
 
+  attr_reader :bunny, :repository_root, :queue_name, :exchange_name, :routing_key
 
-def parse_message(msg)
-  Yajl::Parser.parse(msg[:payload])
-end
-
-def handle_message(msg)
-  case msg['type']
-  when 'create'
-    r = make_repo msg['repository']
-    { 'status' => 'ok', 'message' => "Created '#{File.basename(r.path)}'" }
-  else
-    raise "Unknown message type '#{msg['type']}'"
+  def initialize(
+                  bunny,
+                  repository_root  = "/home/git/repositories",
+                  queue_name       = "git_repo_create_in",
+                  exchange_name    = 'git',
+                  routing_key      = 'repo.create.out'
+                )
+    @bunny            = bunny
+    @repository_root  = repository_root
+    @queue_name       = queue_name
+    @exchange_name    = exchange_name
+    @routing_key      = routing_key
   end
-end
 
-def make_repo(repo)
-  path = File.expand_path(REPO_PATH % repo)
-  if path !~ /^\/home\/git\/repositories/
-    raise "attempt to skip out of repo root"
-  end
-  if File.directory?(path)
-    raise "Repository '#{repo}' already exists"
-  end
-  Grit::Repo.init_bare(path)
-end
-
-def send_message(bunny, msg)
-  m = Yajl::Encoder.encode(msg)
-  bunny.exchange('git').publish(m, :key => 'repo.create.out')
-end
-
-def handle_error(bunny, error)
-  send_message(bunny, { 'status' => 'error', 'type' => error.class, 'message' => error.message })
-end
-
-
-
-Bunny.run do |bunny|
-  q = bunny.queue('git_repo_create_in', :passive => true)
-
-  q.subscribe(:ack => true) do |msg|
-    begin
-      m = parse_message(msg)
-      r = handle_message(m)
-      send_message(bunny, r)
-    rescue Exception => e
-      handle_error(bunny, e)
+  def self.run
+    ::Bunny.run do |bunny|
+      self.new(bunny).run
     end
   end
+
+  def run
+    queue.subscribe do |msg|
+      self.handle(msg)
+    end
+  end
+
+  def handle(msg)
+    m = parse_message(msg)
+    r = handle_message(m)
+    success(r)
+  rescue Exception => e
+    error(e)
+  end
+
+  def handle_message(msg)
+    case msg['type']
+    when 'create'
+      r = create_repository(msg['repository'])
+      "Created '#{File.basename(r.path)}'"
+    else
+      raise "Unknown message type '#{msg['type']}'"
+    end
+  end
+
+  def create_repository(repo)
+    path = repository_path(repo)
+    if File.directory?(path)
+      raise "Repository '#{repo}' already exists"
+    end
+    Grit::Repo.init_bare(path)
+  end
+
+  def repository_path(repo)
+    path = File.expand_path(File.join(repository_root, "#{repo}.git"))
+    if path !~ /^#{repository_root}/
+      raise "Attempt to skip out of repo root"
+    end
+    path
+  end
+
+
+  def queue
+    @queue ||= bunny.queue(queue_name, :passive => true)
+  end
+
+  def exchange
+    @exchange ||= bunny.exchange(exchange_name, :passive => true)
+  end
+
+  def parse_message(msg)
+    Yajl::Parser.parse(msg[:payload])
+  end
+
+  def encode_message(msg)
+    Yajl::Encoder.encode(msg)
+  end
+
+  def error(e)
+    send_message({ 'status' => 'error', 'type' => e.class, 'message' => e.message })
+  end
+
+  def success(s)
+    send_message({'status' => 'ok', 'message' => s})
+  end
+
+  def send_message(msg)
+    exchange.publish(encode_message(msg), :key => routing_key)
+  end
+
 end
+
+GitHandler.run
+

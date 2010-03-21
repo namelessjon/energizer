@@ -4,11 +4,12 @@
 require 'bunny'
 require 'yajl'
 require 'grit'
+require 'syslog'
 
 
 class GitHandler
 
-  attr_reader :bunny, :repository_root, :queue_name, :exchange_name, :routing_key
+  attr_reader :log, :bunny, :repository_root, :queue_name, :exchange_name, :routing_key
 
   def initialize(
                   bunny,
@@ -22,6 +23,7 @@ class GitHandler
     @queue_name       = queue_name
     @exchange_name    = exchange_name
     @routing_key      = routing_key
+    @log              = Syslog.open('git_handler')
   end
 
   def self.run
@@ -31,6 +33,7 @@ class GitHandler
   end
 
   def run
+    @log.info "Starting handling messages"
     queue.subscribe do |msg|
       self.handle(msg)
     end
@@ -88,10 +91,12 @@ class GitHandler
   end
 
   def error(e)
+    log.warning "#{e.class}: #{e.message}"
     send_message({ 'status' => 'error', 'type' => e.class, 'message' => e.message })
   end
 
   def success(s)
+    log.info s
     send_message({'status' => 'ok', 'message' => s})
   end
 

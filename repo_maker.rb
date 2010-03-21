@@ -27,9 +27,16 @@ class GitHandler
   end
 
   def self.run
-    ::Bunny.run do |bunny|
-      self.new(bunny).run
-    end
+    b = Bunny.new
+    b.start
+    gh = self.new(b)
+    trap("TERM") {
+      b.stop
+    }
+    trap("INT") {
+      b.stop
+    }
+    gh.run
   end
 
   def run

@@ -89,10 +89,25 @@ module Energizer
           Process.wait
         else
           self.handle(msg)
+          exit!
         end
       end
     end
 
+    # handles the given message
+    #
+    # The message is parsed, then pased on to a method which routes it to the
+    # correct class, should one be found.  If it is successful, the job class'
+    # sucess method will be relayed back to the return routing key.  If the job
+    # raises an error, instead this will be returned.
+    #
+    # Currently doesn't handle an error in JSON decoding.
+    #
+    # @param [String] message A JSON encoded message.  The message is of the format [job_name, return_to, params]
+    #
+    # @return nil
+    #
+    # @api private
     def handle(message)
       type, return_to, params = parse(message[:payload])
       begin
@@ -101,16 +116,18 @@ module Energizer
       rescue Exception => e
         error(return_to, e)
       end
-      exit!
     end
 
+    # dispatch the job to the right class
+    #
+    # @api private
     def handle_message(type, params)
       type = classify(type)
 
       klass = constantize(type)
       klass.handle(params)
-    #rescue NameError
-     # raise UnknownJobType, "Don't have a worker to handle '#{msg['type']}' jobs"
+    rescue NameError
+      raise UnknownJobType, "Don't have a worker to handle '#{type}' jobs"
     end
 
 

@@ -42,7 +42,11 @@ class GitHandler
   def run
     @log.info "Starting handling messages"
     queue.subscribe do |msg|
-      self.handle(msg)
+      if fork
+        Process.wait
+      else
+        self.handle(msg)
+      end
     end
   end
 
@@ -50,8 +54,10 @@ class GitHandler
     m = parse_message(msg)
     r = handle_message(m)
     success(r)
+    exit!
   rescue Exception => e
     error(e)
+    exit!
   end
 
   def handle_message(msg)

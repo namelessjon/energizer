@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/opt/ruby-enterprise/bin/ruby -rubygems
 # repo_maker.rb
 # Jonathan D. Stott <jonathan.stott@gmail.com>
 require 'bunny'

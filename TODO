@@ -1,0 +1,5 @@
+* Add a class to make sending/recieving messages from the app side easier
+* Write more docs
+* Some specs would not hurt
+* gemify
+* Change to a model where job types are registered, allowing discovery?
